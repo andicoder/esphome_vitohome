@@ -143,6 +143,24 @@ void VitoClock::handle_read_(const ResponseView &response) {
   BcdDateTime device_time{};
   const bool device_time_ok = decode_datetime_bcd(response.data, response.data_length, 0, &device_time);
 
+  // Read the device's weekday convention off its own clock on every sync, so
+  // the log shows it even when nothing is written. The configured origin is
+  // only the fallback for a clock whose weekday byte fits neither convention.
+  WeekdayOrigin origin = this->weekday_origin_;
+  WeekdayOrigin detected{};
+  if (detect_weekday_origin(response.data, response.data_length, 0, &detected)) {
+    if (detected != origin)
+      ESP_LOGI(TAG, "System-time sync: device counts weekdays from %s, not the configured %s; following the device",
+               detected == WeekdayOrigin::MONDAY ? "Monday" : "Sunday",
+               origin == WeekdayOrigin::MONDAY ? "Monday" : "Sunday");
+    ESP_LOGD(TAG, "System-time sync: device weekday origin %s",
+             detected == WeekdayOrigin::MONDAY ? "Monday" : "Sunday");
+    origin = detected;
+  } else {
+    ESP_LOGW(TAG, "System-time sync: device weekday fits neither convention, using the configured %s origin",
+             origin == WeekdayOrigin::MONDAY ? "Monday" : "Sunday");
+  }
+
   bool need_write = true;
 
   if (device_time_ok) {
@@ -173,7 +191,7 @@ void VitoClock::handle_read_(const ResponseView &response) {
     return;
 
   uint8_t buffer[CLOCK_LEN];
-  const uint8_t weekday = device_weekday_from_esptime(time.day_of_week);
+  const uint8_t weekday = device_weekday_from_esptime(time.day_of_week, origin);
 
   if (!encode_datetime_bcd(time.year, time.month, time.day_of_month, weekday, time.hour, time.minute, time.second,
                            buffer)) {

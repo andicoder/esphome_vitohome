@@ -66,11 +66,16 @@ CONF_TIME_SYNC = "time_sync"
 CONF_CLOCK_ADDRESS = "clock_address"
 CONF_DRIFT_THRESHOLD = "drift_threshold"
 CONF_SYNC_ON_BOOT = "sync_on_boot"
+CONF_WEEKDAY_ORIGIN = "weekday_origin"
+
+# The clock address whose weekday byte counts from Monday (see decode.h
+# WeekdayOrigin): WPR_Uhrzeit, the heat-pump clock.
+WPR_CLOCK_ADDRESS = 0x08E0
 
 # Defaults are deliberately conservative: a daily check, a one-minute drift
 # tolerance, and a one-shot sync once the time source is first valid. All three
 # are user-overridable. interval: 0s disables the periodic check (boot-only).
-TIME_SYNC_SCHEMA = cv.Schema(
+_TIME_SYNC_FIELDS = cv.Schema(
     {
         cv.Optional(CONF_INTERVAL, default="24h"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_DRIFT_THRESHOLD, default="60s"): cv.positive_time_period_seconds,
@@ -107,8 +112,24 @@ TIME_SYNC_SCHEMA = cv.Schema(
         # 8 bytes of BCD is assumed regardless (VitoClock::CLOCK_LEN): both
         # DateTimeBCD variants are 8 bytes, only the address moves.
         cv.Optional(CONF_CLOCK_ADDRESS, default=0x088E): cv.hex_uint16_t,
+        # Where the device's weekday byte starts counting. Defaults from the
+        # address: the NRF clock (0x088E) is sunday=0, the WPR heat-pump clock
+        # (0x08E0) is monday=0 -- hardware-confirmed on a V200WO1A, where
+        # Wednesday reads 0x02. Writing the wrong one moves the controller to
+        # the next or previous day, and with it every weekly program.
+        cv.Optional(CONF_WEEKDAY_ORIGIN): cv.one_of("sunday", "monday", lower=True),
     }
 )
+
+
+def _default_weekday_origin(config):
+    if CONF_WEEKDAY_ORIGIN not in config:
+        config = dict(config)
+        config[CONF_WEEKDAY_ORIGIN] = "monday" if config[CONF_CLOCK_ADDRESS] == WPR_CLOCK_ADDRESS else "sunday"
+    return config
+
+
+TIME_SYNC_SCHEMA = cv.All(_TIME_SYNC_FIELDS, _default_weekday_origin)
 
 # Shared platform option names. Centralised here (rather than redefined in each
 # platform file) so a single string change propagates to every consumer -- the
@@ -1145,5 +1166,6 @@ async def to_code(config):
                 int(sync[CONF_DRIFT_THRESHOLD].total_seconds),
                 sync[CONF_SYNC_ON_BOOT],
                 sync[CONF_CLOCK_ADDRESS],
+                sync[CONF_WEEKDAY_ORIGIN] == "monday",
             )
         )

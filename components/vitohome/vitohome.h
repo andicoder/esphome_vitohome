@@ -156,14 +156,17 @@ class VitoHomeComponent final : public PollingComponent, public uart::UARTDevice
 #endif
   }
 
-  void set_time_sync(uint32_t interval_ms, uint32_t drift_threshold_s, bool sync_on_boot, uint16_t clock_address) {
+  void set_time_sync(uint32_t interval_ms, uint32_t drift_threshold_s, bool sync_on_boot, uint16_t clock_address,
+                     bool weekday_monday_origin) {
 #ifdef VITOHOME_TIME_SYNC
-    this->clock_.set_config(interval_ms, drift_threshold_s, sync_on_boot, clock_address);
+    this->clock_.set_config(interval_ms, drift_threshold_s, sync_on_boot, clock_address,
+                            weekday_monday_origin ? WeekdayOrigin::MONDAY : WeekdayOrigin::SUNDAY);
 #else
     (void) interval_ms;
     (void) drift_threshold_s;
     (void) sync_on_boot;
     (void) clock_address;
+    (void) weekday_monday_origin;
 #endif
   }
 

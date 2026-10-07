@@ -33,6 +33,7 @@ from components.vitohome import (  # noqa: E402
     CONF_RAW_QUEUE_SIZE,
     CONF_SIGNED,
     CONF_TIME_ID,
+    CONF_WEEKDAY_ORIGIN,
     CONFIG_SCHEMA,
     CONVERTERS,
     TIME_SYNC_SCHEMA,
@@ -331,6 +332,29 @@ def test_clock_address_accepts_the_wpr_heat_pump_address():
     a different datapoint entirely, and then blind-writes a BCD timestamp to it.
     """
     assert TIME_SYNC_SCHEMA({CONF_CLOCK_ADDRESS: 0x08E0})[CONF_CLOCK_ADDRESS] == 0x08E0
+
+
+def test_weekday_origin_defaults_to_sunday_on_the_nrf_clock():
+    """0x088E keeps the strftime %w convention, hardware-confirmed on 0x20CB."""
+    assert TIME_SYNC_SCHEMA({})[CONF_WEEKDAY_ORIGIN] == "sunday"
+
+
+def test_weekday_origin_defaults_to_monday_on_the_wpr_clock():
+    """The WPR heat-pump clock at 0x08E0 counts weekdays from Monday.
+
+    Hardware-confirmed on a V200WO1A (device 0x2048, SW 0x08): on Wednesday
+    2026-10-07 0x08E0 read ``20 26 10 07 02 ...`` -- weekday byte 0x02, where
+    the sunday=0 convention would expect 0x03. The controller's weekly program
+    ran its weekday pause on the real Monday and Friday and not on the weekend,
+    so 0x02 is its correct Wednesday, not a wrong clock. Writing the sunday=0
+    value would make it a Thursday and shift every weekly program by a day.
+    """
+    assert TIME_SYNC_SCHEMA({CONF_CLOCK_ADDRESS: 0x08E0})[CONF_WEEKDAY_ORIGIN] == "monday"
+
+
+def test_weekday_origin_explicit_value_wins():
+    cfg = TIME_SYNC_SCHEMA({CONF_CLOCK_ADDRESS: 0x08E0, CONF_WEEKDAY_ORIGIN: "sunday"})
+    assert cfg[CONF_WEEKDAY_ORIGIN] == "sunday"
 
 
 def test_clock_address_rejects_out_of_range():

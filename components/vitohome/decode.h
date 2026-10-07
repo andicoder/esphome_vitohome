@@ -181,7 +181,8 @@ struct BcdDateTime {
 
 // Viessmann DateTimeBCD, 8 bytes starting at data[offset]:
 //   [0]=year-hi BCD (e.g. 0x20)  [1]=year-lo BCD (e.g. 0x26)
-//   [2]=month BCD  [3]=day BCD  [4]=weekday (sunday=0..saturday=6, IGNORED)
+//   [2]=month BCD  [3]=day BCD  [4]=weekday (origin per device, IGNORED here;
+//   see detect_weekday_origin)
 //   [5]=hour BCD  [6]=minute BCD  [7]=second BCD
 // Layout source: InsideViessmannVitosoft, Viessmann2MQTT.py
 // DateTimeFromBCD() — i.e. the reverse-engineering repo's own decoder, NOT
@@ -246,11 +247,45 @@ inline int64_t civil_seconds(const BcdDateTime &dt) {
          static_cast<int64_t>(dt.minute) * 60 + dt.second;
 }
 
-// ESPHome ESPTime::day_of_week is sunday=1..saturday=7; the Vitotronic stores
-// the weekday byte as sunday=0..saturday=6 -- the strftime %w convention that
-// vcontrold writes. Hardware-confirmed on 0x20CB: a read of 0x088E on a
-// Wednesday returns weekday byte 0x03. Map ESPTime -> device.
-inline uint8_t device_weekday_from_esptime(uint8_t dow_sun1) { return static_cast<uint8_t>((dow_sun1 + 6) % 7); }
+// Where the device's weekday byte starts counting. The two clock datapoints
+// disagree:
+//   SUNDAY  sunday=0..saturday=6 -- the strftime %w convention vcontrold writes.
+//           Hardware-confirmed on 0x20CB: 0x088E on a Wednesday reads 0x03.
+//   MONDAY  monday=0..sunday=6 -- the WPR heat-pump clock at 0x08E0.
+//           Hardware-confirmed on a V200WO1A (0x2048): 0x08E0 on Wednesday
+//           2026-10-07 read 0x02, and its weekly program ran the weekday pause
+//           on the real Monday and Friday, not at the weekend.
+enum class WeekdayOrigin : uint8_t { SUNDAY, MONDAY };
+
+// ESPHome ESPTime::day_of_week is sunday=1..saturday=7. Map ESPTime -> device.
+inline uint8_t device_weekday_from_esptime(uint8_t dow_sun1, WeekdayOrigin origin = WeekdayOrigin::SUNDAY) {
+  return static_cast<uint8_t>((dow_sun1 + (origin == WeekdayOrigin::MONDAY ? 5 : 6)) % 7);
+}
+
+// Read the device's convention off its own clock: the weekday byte, judged
+// against the device's own date. The two conventions are always exactly one
+// day apart, so a byte that matches one cannot match the other. Returns false
+// when it matches neither (a clock reset to a default, a non-BCD byte), in
+// which case the caller falls back to the configured origin.
+inline bool detect_weekday_origin(const uint8_t *data, std::size_t data_len, std::size_t offset, WeekdayOrigin *out) {
+  BcdDateTime dt{};
+  uint8_t weekday = 0;
+  if (out == nullptr || !decode_datetime_bcd(data, data_len, offset, &dt) || !bcd_to_int(data[offset + 4], &weekday))
+    return false;
+  // 1970-01-01 (civil day 0) was a Thursday: 4 in sunday=0 terms.
+  const int64_t days = civil_days(dt.year, dt.month, dt.day);
+  const uint8_t sunday0 = static_cast<uint8_t>((((days % 7) + 7) % 7 + 4) % 7);
+  const uint8_t monday0 = static_cast<uint8_t>((sunday0 + 6) % 7);
+  if (weekday == sunday0) {
+    *out = WeekdayOrigin::SUNDAY;
+    return true;
+  }
+  if (weekday == monday0) {
+    *out = WeekdayOrigin::MONDAY;
+    return true;
+  }
+  return false;
+}
 
 // Encode a datetime into the 8-byte Viessmann DateTimeBCD wire layout (the
 // inverse of decode_datetime_bcd):

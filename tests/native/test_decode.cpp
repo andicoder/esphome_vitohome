@@ -444,6 +444,32 @@ static void test_clock_helpers() {
   CHECK(device_weekday_from_esptime(4) == 3);  // Wednesday
   CHECK(device_weekday_from_esptime(7) == 6);  // Saturday
 
+  // WPR heat-pump clock (0x08E0) counts from Monday: monday=0..sunday=6.
+  // Hardware-confirmed on a V200WO1A (0x2048): Wednesday reads weekday 0x02.
+  CHECK(device_weekday_from_esptime(4, WeekdayOrigin::MONDAY) == 2);  // Wednesday
+  CHECK(device_weekday_from_esptime(2, WeekdayOrigin::MONDAY) == 0);  // Monday
+  CHECK(device_weekday_from_esptime(1, WeekdayOrigin::MONDAY) == 6);  // Sunday
+  CHECK(device_weekday_from_esptime(4, WeekdayOrigin::SUNDAY) == 3);  // Wednesday, NRF
+
+  // The device tells its own convention: its weekday byte, judged against its
+  // own date. 2026-10-07 is a Wednesday.
+  {
+    WeekdayOrigin o{};
+    const uint8_t wpr[] = {0x20, 0x26, 0x10, 0x07, 0x02, 0x12, 0x26, 0x36};  // V200WO1A, read 2026-10-07
+    CHECK(detect_weekday_origin(wpr, 8, 0, &o) && o == WeekdayOrigin::MONDAY);
+    const uint8_t nrf[] = {0x20, 0x26, 0x10, 0x07, 0x03, 0x12, 0x26, 0x36};
+    CHECK(detect_weekday_origin(nrf, 8, 0, &o) && o == WeekdayOrigin::SUNDAY);
+    const uint8_t sun_s[] = {0x20, 0x26, 0x06, 0x28, 0x00, 0x14, 0x30, 0x45};  // a Sunday, sunday=0
+    CHECK(detect_weekday_origin(sun_s, 8, 0, &o) && o == WeekdayOrigin::SUNDAY);
+    const uint8_t sun_m[] = {0x20, 0x26, 0x06, 0x28, 0x06, 0x14, 0x30, 0x45};  // a Sunday, monday=0
+    CHECK(detect_weekday_origin(sun_m, 8, 0, &o) && o == WeekdayOrigin::MONDAY);
+    const uint8_t wrong[] = {0x20, 0x26, 0x10, 0x07, 0x05, 0x12, 0x26, 0x36};  // fits neither
+    CHECK(!detect_weekday_origin(wrong, 8, 0, &o));
+    const uint8_t not_bcd[] = {0x20, 0x26, 0x10, 0x07, 0x0A, 0x12, 0x26, 0x36};
+    CHECK(!detect_weekday_origin(not_bcd, 8, 0, &o));
+    CHECK(!detect_weekday_origin(wpr, 7, 0, &o));  // short read
+  }
+
   // Encode the 8-byte DateTimeBCD wire layout. 2026-06-28 14:30:45 is a Sunday
   // (weekday byte = 0 in the sunday=0 convention).
   uint8_t buf[8];

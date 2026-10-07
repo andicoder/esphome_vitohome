@@ -4,6 +4,7 @@
 #ifdef VITOHOME_TIME_SYNC
 
 #include "esphome/components/time/real_time_clock.h"
+#include "decode.h"
 #include "vito_entity.h"
 
 namespace esphome::vitohome {
@@ -78,10 +79,12 @@ class VitoClock final : public VitoEntityBase {
   //
   // Called from to_code() before setup(), so the datapoint is rebuilt here
   // rather than in the constructor.
-  void set_config(uint32_t interval_ms, uint32_t drift_threshold_s, bool sync_on_boot, uint16_t clock_address) {
+  void set_config(uint32_t interval_ms, uint32_t drift_threshold_s, bool sync_on_boot, uint16_t clock_address,
+                  WeekdayOrigin weekday_origin = WeekdayOrigin::SUNDAY) {
     this->interval_ms_ = interval_ms;
     this->drift_threshold_s_ = drift_threshold_s;
     this->sync_on_boot_ = sync_on_boot;
+    this->weekday_origin_ = weekday_origin;
     this->set_clock_address(clock_address);
   }
 
@@ -125,6 +128,7 @@ class VitoClock final : public VitoEntityBase {
   time::RealTimeClock *time_source_{nullptr};
 
   uint16_t clock_address_{CLOCK_ADDRESS_DEFAULT};
+  WeekdayOrigin weekday_origin_{WeekdayOrigin::SUNDAY};
 
   uint32_t interval_ms_{0};         // 0 = no periodic sync
   uint32_t drift_threshold_s_{60};  // write only above this drift

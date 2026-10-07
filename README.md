@@ -196,6 +196,14 @@ vitohome:
   #                         # Not supported under protocol: GWG (its clock is
   #                         # three 1-byte registers, a different shape) —
   #                         # rejected at config time.
+  #   weekday_origin: monday # optional fallback only. The weekday byte is
+  #                         # counted from Sunday on the NRF clock and from
+  #                         # Monday on the WPR clock (V200WO1A: Wednesday =
+  #                         # 0x02). Each sync reads the device's own
+  #                         # convention off its clock (weekday byte vs. its
+  #                         # date) and writes in that; this option only
+  #                         # applies when the byte fits neither. Defaults to
+  #                         # monday for 0x08E0, sunday otherwise.
   # raw_queue_size: 0       # scan-console lane slots (~38 B each, reserved once
   #                         # at boot). Default 0: the scan console is a debug
   #                         # tool, so it is opt-in and costs nothing unless
