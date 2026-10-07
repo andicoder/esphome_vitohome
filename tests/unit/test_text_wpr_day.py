@@ -51,3 +51,15 @@ def test_wpr_day_reads_eight_three_byte_periods():
 def test_unknown_format_is_rejected():
     with pytest.raises(cv.Invalid):
         CONFIG_SCHEMA(_cfg(format="kw_day"))
+
+
+def test_read_only_twin_exists_as_a_text_sensor():
+    """A text entity can be edited from Home Assistant; until the day programs
+    have an editor that cannot produce a broken program, a deployment can show
+    them through the read-only text_sensor type instead."""
+    from components.vitohome.text_sensor import CONFIG_SCHEMA as TS_SCHEMA
+    from components.vitohome.text_sensor import TEXT_SENSOR_TYPES
+
+    assert "wpr_day" in TEXT_SENSOR_TYPES
+    cfg = TS_SCHEMA({"name": f"Heizen Mo ro {next(_NAME_SEQ)}", "type": "wpr_day", "address": 0x9200})
+    assert cfg["length"] == WPR_DAY_LENGTH

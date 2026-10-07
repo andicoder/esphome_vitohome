@@ -99,6 +99,11 @@ class VitoEntityBase {
   // receives responses and errors like any other.
   virtual bool wants_polling() const { return true; }
 
+  // A read normally sends a READ telegram. An entity that answers with a
+  // parameter here (up to 4 bytes) is fetched with a Remote_Procedure_Call
+  // instead, P300 only -- the WPR fault history (0xA801) is read this way.
+  virtual uint8_t rpc_param(uint8_t * /*out4*/) const { return 0; }
+
   // --- read path ------------------------------------------------------------
   // Called by the component on a successful read response. Packet length and
   // checksum have already been verified by the optolink engine.

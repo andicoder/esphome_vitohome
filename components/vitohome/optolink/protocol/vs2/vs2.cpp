@@ -32,6 +32,22 @@ bool VS2Engine::read(uint16_t address, uint8_t length) {
   return false;
 }
 
+bool VS2Engine::rpc(uint16_t address, const uint8_t *param, uint8_t length) {
+  if (_busy) {
+    return false;
+  }
+  if (_currentPacket.createPacket(PacketType::REQUEST, FunctionCode::RPC, 0, address, length, param)) {
+    _currentAddress = address;
+    _currentLength = length;
+    _busy = true;
+    _requestTime = _currentMillis;
+    optolink_log_i("rpc packet OK");
+    return true;
+  }
+  optolink_log_i("rpc not possible, packet creation error");
+  return false;
+}
+
 bool VS2Engine::write(uint16_t address, const uint8_t *data, uint8_t length) {
   if (_busy) {
     return false;

@@ -82,6 +82,10 @@ class VS2Engine {
 
   bool read(uint16_t address, uint8_t length);
   bool write(uint16_t address, const uint8_t *data, uint8_t length);
+  // Remote_Procedure_Call (function code 0x07): `param` goes out inline and
+  // the device decides how much it returns. The WPR heat-pump controllers
+  // serve their fault history this way (0xA801, one call per entry index).
+  bool rpc(uint16_t address, const uint8_t *param, uint8_t length);
 
   bool begin();
   void loop();

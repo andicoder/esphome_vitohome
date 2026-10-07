@@ -31,7 +31,9 @@ bool PacketVS2::createPacket(PacketType pt, FunctionCode fc, uint8_t id, uint16_
   // 6-byte size check and then copy `len` bytes -- a null dereference and,
   // for len 251..255, an out-of-bounds write. Both were latent (the engines
   // only build REQUESTs), but present.
-  const bool has_payload = (fc == FunctionCode::WRITE || pt == PacketType::RESPONSE);
+  // An RPC request carries its parameter inline as well (the WPR fault history
+  // passes the entry index this way; see VS2Engine::rpc).
+  const bool has_payload = (fc == FunctionCode::WRITE || fc == FunctionCode::RPC || pt == PacketType::RESPONSE);
   if (has_payload && !data) {
     optolink_log_w("Function code - data mismatch");
     return false;

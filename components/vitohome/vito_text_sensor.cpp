@@ -8,6 +8,7 @@
 #include "decode.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
+#include "vitohome.h"
 
 namespace esphome::vitohome {
 
@@ -29,6 +30,10 @@ static const char *type_name(TextSensorType t) {
       return "utf16";
     case TextSensorType::SCAN_RESULT:
       return "scan_result";
+    case TextSensorType::WPR_ERROR_HISTORY:
+      return "wpr_error_history";
+    case TextSensorType::WPR_DAY:
+      return "wpr_day";
   }
   return "?";
 }
@@ -220,7 +225,72 @@ void VitoTextSensor::handle_response(const ResponseView &response) {
     case TextSensorType::UTF16:
       this->publish_utf16_(data, len);
       return;
+    case TextSensorType::WPR_ERROR_HISTORY:
+      this->collect_wpr_fault_(data, len);
+      return;
+    case TextSensorType::WPR_DAY: {
+      char out[128];
+      if (decode_wpr_day(data, len, out, sizeof(out)) < 0) {
+        ESP_LOGW(TAG, "%s: response too short (%u bytes)", this->datapoint_.name(), len);
+        return;
+      }
+      this->publish_state(out);
+      return;
+    }
   }
+}
+
+uint8_t VitoTextSensor::rpc_param(uint8_t *out4) const {
+  if (this->type_ != TextSensorType::WPR_ERROR_HISTORY)
+    return 0;
+  out4[0] = this->wpr_next_;
+  return 1;
+}
+
+void VitoTextSensor::collect_wpr_fault_(const uint8_t *data, uint8_t len) {
+  WprFaultEntry e{};
+  if (!decode_wpr_fault_entry(data, len, &e)) {
+    ESP_LOGW(TAG, "%s: entry %u too short (%u bytes)", this->datapoint_.name(), this->wpr_next_, len);
+    this->wpr_next_ = 0;
+    return;
+  }
+  if (this->wpr_next_ == 0) {
+    this->wpr_text_.clear();
+    this->wpr_found_ = 0;
+  }
+  if (e.code != 0) {
+    char item[48];
+    const int n = format_wpr_fault_entry(e, item, sizeof(item));
+    const char *text = this->lookup_(e.code);
+    ESP_LOGD(TAG, "%s: entry %u: %s%s%s", this->datapoint_.name(), this->wpr_next_, item, text ? " " : "",
+             text ? text : "");
+    if (n > 0) {
+      if (!this->wpr_text_.empty())
+        this->wpr_text_ += "; ";
+      this->wpr_text_ += item;
+    }
+    this->wpr_found_++;
+  }
+  // A code of 0 ends the written history.
+  const bool done = e.code == 0 || this->wpr_next_ + 1 >= this->wpr_entries_;
+  if (!done) {
+    this->wpr_next_++;
+    if (this->vh_parent_ != nullptr && this->vh_parent_->request_priority_read(this))
+      return;
+    ESP_LOGW(TAG, "%s: next entry could not be queued, publishing %u so far", this->datapoint_.name(),
+             this->wpr_found_);
+  }
+  this->wpr_next_ = 0;
+  // An ESPHome text_sensor state is capped at 255 characters; keep whole items.
+  std::string state = this->wpr_found_ == 0 ? std::string("keine") : this->wpr_text_;
+  if (state.size() > 255) {
+    state.resize(255);
+    const auto cut = state.rfind("; ");
+    if (cut != std::string::npos)
+      state.resize(cut);
+  }
+  ESP_LOGI(TAG, "%s: %u entries", this->datapoint_.name(), this->wpr_found_);
+  this->publish_state(state);
 }
 
 void VitoTextSensor::handle_error(optolink::OptolinkResult /*error*/) {

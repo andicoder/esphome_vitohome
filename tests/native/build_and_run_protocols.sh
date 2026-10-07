@@ -91,6 +91,11 @@ g++ -std=c++17 -Wall -Wextra -Werror $SAN -pthread -DVITOHOME_PROTOCOL_KW -I"$RO
   proof_vs1_write.cpp "${SRCS[@]}" -o vs1_write
 ./vs1_write
 
+echo "== VS2 Remote_Procedure_Call (fc 0x07): the WPR fault history =="
+g++ -std=c++17 -Wall -Wextra -Werror $SAN -pthread -I"$ROOT" -I"$OPTO" \
+  proof_vs2_rpc.cpp "${SRCS[@]}" -o vs2_rpc
+./vs2_rpc
+
 echo "== VS2 guards: ERROR-type frames + parser reset (#9 / #10) =="
 g++ -std=c++17 -Wall -Wextra -Werror $SAN -pthread -I"$ROOT" -I"$OPTO" \
   proof_vs2_guards.cpp "${SRCS[@]}" -o vs2_guards

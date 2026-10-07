@@ -844,6 +844,17 @@ def _final_validate(config):
     full = fv.full_config.get()
     hub_id = config[CONF_ID]
 
+    if protocol != "P300":
+        # The WPR fault history is fetched with Remote_Procedure_Calls, which
+        # only the P300 engine sends; KW/GWG would send a plain READ that the
+        # controller refuses on every poll.
+        for _domain, entity in _entities_for_hub(full, ("text_sensor",), hub_id):
+            if entity.get("type") == "wpr_error_history":
+                raise cv.Invalid(
+                    f"text_sensor '{_entity_name(entity)}' (type wpr_error_history) is read with "
+                    f"Remote_Procedure_Calls, which only protocol P300 supports"
+                )
+
     if protocol == "GWG":
         # System-time sync cannot work under GWG, at any address.
         #

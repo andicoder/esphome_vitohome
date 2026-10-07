@@ -624,6 +624,38 @@ static void test_wpr_day() {
   CHECK(!encode_wpr_day("06:00-24:10N", buf));
 }
 
+// --- WPR fault history entry (RPC 0xA801, 8 bytes) ------------------------
+static void test_wpr_fault_entry() {
+  // [0] index  [1..4] seconds since 1970 LE  [5] fault code  [6..7] flags
+  // (gismo2004/optov errors.py, decode_wp_error_history, WO1A layout).
+  const uint8_t a9[8] = {0x03, 0x10, 0x6A, 0xB4, 0x68, 0xA9, 0x00, 0x00};
+  WprFaultEntry e{};
+  CHECK(decode_wpr_fault_entry(a9, 8, &e));
+  CHECK(e.index == 3 && e.code == 0xA9 && e.seconds == 0x68B46A10u);
+  char out[32];
+  // 0x68B46A10 = 1756654096 = 2025-08-31 15:28:16 as a plain wall clock.
+  CHECK(format_wpr_fault_entry(e, out, sizeof(out)) > 0);
+  CHECK(std::strcmp(out, "A9 31.08.25 15:28") == 0);
+
+  // Code 0 is the end of the written history, not a skippable gap.
+  const uint8_t none[8] = {0x04, 0, 0, 0, 0, 0x00, 0, 0};
+  CHECK(decode_wpr_fault_entry(none, 8, &e) && e.code == 0);
+  CHECK(!decode_wpr_fault_entry(a9, 7, &e));  // short answer
+
+  // A zero timestamp is shown as unknown rather than as 01.01.70.
+  const uint8_t no_time[8] = {0x00, 0, 0, 0, 0, 0xC9, 0, 0};
+  CHECK(decode_wpr_fault_entry(no_time, 8, &e));
+  CHECK(format_wpr_fault_entry(e, out, sizeof(out)) > 0 && std::strcmp(out, "C9 --") == 0);
+
+  // civil_from_days is the inverse of civil_days.
+  uint16_t y;
+  uint8_t mo, d;
+  civil_from_days(civil_days(2026, 10, 7), &y, &mo, &d);
+  CHECK(y == 2026 && mo == 10 && d == 7);
+  civil_from_days(civil_days(2024, 2, 29), &y, &mo, &d);
+  CHECK(y == 2024 && mo == 2 && d == 29);
+}
+
 int main() {
   test_read_le();
   test_sign_extend();
@@ -635,6 +667,7 @@ int main() {
   test_timebyte();
   test_schaltzeiten_day();
   test_wpr_day();
+  test_wpr_fault_entry();
   test_clock_helpers();
   test_datetime();
   test_masked_bit();

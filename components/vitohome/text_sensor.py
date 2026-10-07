@@ -32,6 +32,13 @@ CONF_CODES = "codes"
 # fixed by the on-wire layout, so it is validated rather than configurable.
 ERROR_HISTORY_LENGTH = 9
 
+# A WPR fault-history entry (decode.h WprFaultEntry): fetched one RPC per index.
+WPR_FAULT_ENTRY_LENGTH = 8
+
+# A WPR day program (decode.h decode_wpr_day): eight 3-byte periods.
+WPR_DAY_LENGTH = 24
+CONF_ENTRIES = "entries"
+
 VitoTextSensor = vitohome_ns.class_("VitoTextSensor", text_sensor.TextSensor, cg.Component)
 TextSensorType = vitohome_ns.enum("TextSensorType", is_class=True)
 
@@ -43,6 +50,8 @@ TEXT_SENSOR_TYPES = {
     "ascii": TextSensorType.ASCII,
     "utf16": TextSensorType.UTF16,
     "scan_result": TextSensorType.SCAN_RESULT,
+    "wpr_error_history": TextSensorType.WPR_ERROR_HISTORY,
+    "wpr_day": TextSensorType.WPR_DAY,
 }
 
 # A {raw_value: label} map. Keys are integers (the decoded wire value), values
@@ -196,6 +205,24 @@ CONFIG_SCHEMA = cv.typed_schema(
             ),
             _validate_code_bytes,
         ),
+        # WPR heat pumps (V200WO1A): 'WPRError' at 0xA801, read entry by entry
+        # with a Remote_Procedure_Call -- P300 only (checked in _final_validate).
+        "wpr_error_history": _addressed(
+            {
+                cv.Optional(CONF_LENGTH, default=WPR_FAULT_ENTRY_LENGTH): cv.int_range(
+                    min=WPR_FAULT_ENTRY_LENGTH, max=WPR_FAULT_ENTRY_LENGTH
+                ),
+                cv.Optional(CONF_ENTRIES, default=30): cv.int_range(min=1, max=255),
+                cv.Optional(CONF_CODES, default={}): _VALUE_MAP,
+            }
+        ),
+        # Read-only twin of `text` format wpr_day: the same 24-byte day, decoded
+        # the same way, with no write path.
+        "wpr_day": _addressed(
+            {
+                cv.Optional(CONF_LENGTH, default=WPR_DAY_LENGTH): cv.int_range(min=WPR_DAY_LENGTH, max=WPR_DAY_LENGTH),
+            }
+        ),
         "device_id": (text_sensor.text_sensor_schema(VitoTextSensor).extend(_BASE).extend(cv.COMPONENT_SCHEMA)),
         # No address: the hub feeds it the raw scan-console result line
         # (queue_raw_read / queue_raw_write), exactly like device_id is fed by
@@ -274,6 +301,9 @@ async def to_code(config):
 
     if CONF_ACCESS in config:
         cg.add(var.set_access(config[CONF_ACCESS]))
+
+    if config[CONF_TYPE] == "wpr_error_history":
+        cg.add(var.set_wpr_entries(config[CONF_ENTRIES]))
 
     emit_poll_interval(var, poll_ms)
 

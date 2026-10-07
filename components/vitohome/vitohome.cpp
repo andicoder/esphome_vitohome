@@ -608,8 +608,13 @@ void VitoHomeComponent::dispatch_next_() {
     // VitoEntityBase::access_), so an entity that never sets `access:` gets
     // exactly the pre-existing behaviour.
     const bool dispatched_ok = this->vito_->read(datapoint.address(), datapoint.length(), entity->access());
-#else
+#elif defined(VITOHOME_PROTOCOL_KW)
     const bool dispatched_ok = this->vito_->read(datapoint.address(), datapoint.length());
+#else
+    uint8_t rpc_param[4];
+    const uint8_t rpc_len = entity->rpc_param(rpc_param);
+    const bool dispatched_ok = rpc_len != 0 ? this->vito_->rpc(datapoint.address(), rpc_param, rpc_len)
+                                            : this->vito_->read(datapoint.address(), datapoint.length());
 #endif
     if (!dispatched_ok) {
       // See the write lane above: transient _busy retains, a permanent

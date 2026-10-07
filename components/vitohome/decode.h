@@ -624,6 +624,63 @@ inline bool encode_wpr_day(const char *str, uint8_t *buf24) {
   return true;
 }
 
+// Inverse of civil_days (Howard Hinnant's civil_from_days): day count since
+// 1970-01-01 -> year/month/day.
+inline void civil_from_days(int64_t z, uint16_t *year, uint8_t *month, uint8_t *day) {
+  z += 719468;
+  const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+  const unsigned doe = static_cast<unsigned>(z - era * 146097);
+  const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  const unsigned mp = (5 * doy + 2) / 153;
+  const unsigned d = doy - (153 * mp + 2) / 5 + 1;
+  const unsigned m = mp < 10 ? mp + 3 : mp - 9;
+  *year = static_cast<uint16_t>(static_cast<int64_t>(yoe) + era * 400 + (m <= 2));
+  *month = static_cast<uint8_t>(m);
+  *day = static_cast<uint8_t>(d);
+}
+
+// ---------------------------------------------------------------------------
+// WPR fault history entry
+// ---------------------------------------------------------------------------
+// The WPR heat-pump controllers keep their fault history in 'WPRError' at
+// 0xA801: 30 entries of 8 bytes, each fetched with one Remote_Procedure_Call
+// whose parameter is the entry index. An entry is
+//   [0] index (echoes the request)  [1..4] seconds since 1970-01-01, LE
+//   [5] fault code (hex, as on the display)  [6..7] flags
+// A code of 0 ends the written history. Layout per gismo2004/optov
+// (errors.py, decode_wp_error_history), developed on a Vitotronic 200 WO1A.
+struct WprFaultEntry {
+  uint8_t index;
+  uint32_t seconds;
+  uint8_t code;
+};
+
+inline bool decode_wpr_fault_entry(const uint8_t *data, std::size_t data_len, WprFaultEntry *out) {
+  if (data == nullptr || out == nullptr || data_len < 8)
+    return false;
+  out->index = data[0];
+  out->seconds = static_cast<uint32_t>(data[1]) | static_cast<uint32_t>(data[2]) << 8 |
+                 static_cast<uint32_t>(data[3]) << 16 | static_cast<uint32_t>(data[4]) << 24;
+  out->code = data[5];
+  return true;
+}
+
+// "A9 31.08.25 15:28". The timestamp is rendered as a plain wall clock, the
+// way the controller's own clock runs (no timezone math); 0 renders as "--".
+inline int format_wpr_fault_entry(const WprFaultEntry &e, char *out, std::size_t out_cap) {
+  if (out == nullptr || out_cap == 0)
+    return -1;
+  if (e.seconds == 0)
+    return std::snprintf(out, out_cap, "%02X --", e.code);
+  uint16_t y;
+  uint8_t mo, d;
+  civil_from_days(static_cast<int64_t>(e.seconds / 86400), &y, &mo, &d);
+  const uint32_t sod = e.seconds % 86400;
+  return std::snprintf(out, out_cap, "%02X %02u.%02u.%02u %02u:%02u", e.code, d, mo, y % 100,
+                       static_cast<unsigned>(sod / 3600), static_cast<unsigned>(sod % 3600 / 60));
+}
+
 // ---------------------------------------------------------------------------
 // ASCII byte string (HexByte2AsciiByte) -- device part / serial numbers
 // ---------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 #include "esphome/core/defines.h"
 
 #ifdef USE_TEXT_SENSOR
+#include <string>
+
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 #include "vito_entity.h"
@@ -16,6 +18,8 @@ enum class TextSensorType : uint8_t {
   ASCII,          // byte-array-as-string (HexByte2AsciiByte): Sachnummer etc.
   UTF16,          // UTF-16LE byte-string (HexByte2UTF16Byte): Beschriftung_HK1..3
   SCAN_RESULT,    // no bus reads of its own — fed by the hub's raw scan console
+  WPR_ERROR_HISTORY,  // WPR fault buffer: one RPC per 8-byte entry (decode.h WprFaultEntry)
+  WPR_DAY,            // WPR day program, read-only (decode.h decode_wpr_day)
 };
 
 class VitoTextSensor final : public text_sensor::TextSensor, public Component, public VitoEntityBase {
@@ -36,6 +40,8 @@ class VitoTextSensor final : public text_sensor::TextSensor, public Component, p
   // KW answers it with 0xFF fill.
   void set_extract_byte(int16_t byte) { this->extract_byte_ = byte; }
   void set_extract_len(uint8_t len) { this->extract_len_ = len; }
+  void set_wpr_entries(uint8_t n) { this->wpr_entries_ = n; }
+  uint8_t rpc_param(uint8_t *out4) const override;
 
   void dump_config() override;
   void handle_response(const ResponseView &response) override;
@@ -52,12 +58,19 @@ class VitoTextSensor final : public text_sensor::TextSensor, public Component, p
   void publish_error_history_(const uint8_t *data, uint8_t len);
   void publish_ascii_(const uint8_t *data, uint8_t len);
   void publish_utf16_(const uint8_t *data, uint8_t len);
+  void collect_wpr_fault_(const uint8_t *data, uint8_t len);
 
   TextSensorType type_{TextSensorType::RAW_HEX};
   const VitoOption *options_{nullptr};
   uint16_t option_count_{0};
   int16_t extract_byte_{-1};
-  uint8_t extract_len_{1};  // field width to slice at extract_byte_ (enum 1..4, ascii <=32, utf16 <=40)
+  uint8_t extract_len_{1};
+  // WPR fault history sweep: entry wpr_next_ is fetched next; the text is
+  // published once the sweep ends (empty entry or wpr_entries_ reached).
+  uint8_t wpr_entries_{30};
+  uint8_t wpr_next_{0};
+  uint8_t wpr_found_{0};
+  std::string wpr_text_;  // field width to slice at extract_byte_ (enum 1..4, ascii <=32, utf16 <=40)
 };
 
 }  // namespace esphome::vitohome
