@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 from esphome.components import text
 import esphome.config_validation as cv
-from esphome.const import CONF_ADDRESS, CONF_NAME, CONF_UPDATE_INTERVAL
+from esphome.const import CONF_ADDRESS, CONF_FORMAT, CONF_NAME, CONF_UPDATE_INTERVAL
 
 from . import (
     CONF_ACCESS,
@@ -24,8 +24,21 @@ VitoText = vitohome_ns.class_("VitoText", text.Text, cg.Component)
 # the same address, so the hub's read-back re-reads exactly what was written.
 SCHALTZEITEN_LENGTH = 8
 
-# Canonical string upper bound: "HH:MM-HH:MM" x4 + 3 spaces = 47.
-_MAX_LENGTH = 47
+# The WPR heat-pump layout (V200WO1A): eight 3-byte periods {start, end,
+# mode} per day, read as one 24-byte block at the day's base address and
+# written period by period at base+i. See decode.h decode_wpr_day.
+WPR_DAY_LENGTH = 24
+
+FORMATS = ("schaltzeiten", "wpr_day")
+
+# Canonical string upper bounds: "HH:MM-HH:MM" x4 + 3 spaces = 47;
+# "HH:MM-HH:MMx" x8 + 7 spaces = 103 (an unknown mode renders as "?XX").
+_MAX_LENGTH = {"schaltzeiten": 47, "wpr_day": 8 * 14 + 7}
+
+
+def day_program_length(config) -> int:
+    return WPR_DAY_LENGTH if config[CONF_FORMAT] == "wpr_day" else SCHALTZEITEN_LENGTH
+
 
 CONFIG_SCHEMA = (
     text.text_schema(VitoText, mode="text")
@@ -33,6 +46,7 @@ CONFIG_SCHEMA = (
         {
             cv.GenerateID(CONF_VITOHOME_ID): cv.use_id(VitoHomeComponent),
             cv.Required(CONF_ADDRESS): cv.hex_uint16_t,
+            cv.Optional(CONF_FORMAT, default="schaltzeiten"): cv.one_of(*FORMATS, lower=True),
             # GWG-only; rejected under any other protocol in _final_validate
             # (__init__.py). One mode drives this entity's reads AND writes.
             cv.Optional(CONF_ACCESS): cv.enum(GWG_ACCESS_MODES, lower=True),
@@ -47,10 +61,12 @@ CONFIG_SCHEMA = (
 async def to_code(config):
     parent = await cg.get_variable(config[CONF_VITOHOME_ID])
     poll_ms = pop_poll_interval(config)
-    var = await text.new_text(config, min_length=0, max_length=_MAX_LENGTH)
+    var = await text.new_text(config, min_length=0, max_length=_MAX_LENGTH[config[CONF_FORMAT]])
     await cg.register_component(var, config)
 
-    cg.add(var.set_datapoint(datapoint_expression(config[CONF_NAME], config[CONF_ADDRESS], SCHALTZEITEN_LENGTH)))
+    cg.add(var.set_datapoint(datapoint_expression(config[CONF_NAME], config[CONF_ADDRESS], day_program_length(config))))
+    if config[CONF_FORMAT] == "wpr_day":
+        cg.add(var.set_wpr_day(True))
     cg.add(var.set_read_back(config[CONF_READ_BACK]))
     emit_poll_interval(var, poll_ms)
 

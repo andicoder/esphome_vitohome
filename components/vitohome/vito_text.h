@@ -21,18 +21,35 @@ namespace esphome::vitohome {
 // source of truth, restored by the first poll.
 class VitoText final : public text::Text, public Component, public VitoEntityBase {
  public:
-  void set_read_back(bool v) { this->read_back_ = v; }
+  void set_read_back(bool v) {
+    this->read_back_ = v;
+    this->user_read_back_ = v;
+  }
+  void set_wpr_day(bool v) { this->wpr_day_ = v; }
 
   void dump_config() override;
   void handle_response(const ResponseView &response) override;
   void handle_write_response(const ResponseView &response) override;
   void handle_error(optolink::OptolinkResult error) override;
+  void handle_write_error(optolink::OptolinkResult error) override;
   const char *entity_kind() const override { return "text"; }
 
  protected:
   void control(const std::string &value) override;
 
   std::string pending_value_;
+
+  // WPR day program (format: wpr_day): read as one 24-byte block, written
+  // period by period -- only the periods that differ from the last read, one
+  // 3-byte write each at base+i, then one read-back of the whole day.
+  void control_wpr_day_(const std::string &value);
+  void write_next_wpr_period_(int from);
+  bool wpr_day_{false};
+  bool user_read_back_{true};
+  bool have_raw_{false};
+  uint8_t raw_[24]{};
+  uint8_t target_[24]{};
+  int write_index_{-1};
 };
 
 }  // namespace esphome::vitohome

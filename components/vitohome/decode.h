@@ -505,6 +505,126 @@ inline bool encode_schaltzeiten_day(const char *str, uint8_t *buf8) {
 }
 
 // ---------------------------------------------------------------------------
+// WPR phase-coded day program
+// ---------------------------------------------------------------------------
+// The WPR heat-pump controllers (V200WO1A, 0x9200.. for HK1) do not use the
+// 8-byte ON/OFF day block above. A day is eight periods of three bytes:
+//   [0] start  [1] end   (both hour*8 + minute/10, end may be 24:00 = 0xC0)
+//   [2] mode   1 = reduced (R), 2 = normal (N), 3 = second temperature (T)
+// A period with start == end is unused; the controller leaves 00 00 00 or
+// 00 00 02 there. Each period is its own datapoint (base + day*8 + i): the
+// controller answers one 24-byte read of a whole day, but writes go period by
+// period, as optov does on the same family. Hardware-read on a V200WO1A on
+// 2026-10-07; the layout matches the openv WO1C technician dump.
+//
+// Canonical string: the used periods in stored order, "HH:MM-HH:MM" plus the
+// mode letter, space-separated:
+//   "00:00-03:00R 03:00-07:30N 08:30-11:30N"
+// An unknown mode byte renders as "?XX" (hex) so it is visible; the encoder
+// accepts only R, N and T.
+static constexpr std::size_t WPR_DAY_PERIODS = 8;
+static constexpr std::size_t WPR_DAY_LENGTH = WPR_DAY_PERIODS * 3;
+
+inline int decode_wpr_day(const uint8_t *data, std::size_t data_len, char *out, std::size_t out_cap) {
+  if (out != nullptr && out_cap > 0)
+    out[0] = '\0';
+  if (data == nullptr || out == nullptr || out_cap == 0 || data_len < WPR_DAY_LENGTH)
+    return -1;
+  std::size_t off = 0;
+  for (std::size_t i = 0; i < WPR_DAY_PERIODS; i++) {
+    const uint8_t start = data[3 * i], end = data[3 * i + 1], mode = data[3 * i + 2];
+    if (start == end)
+      continue;
+    char mode_s[4];
+    if (mode == 1 || mode == 2 || mode == 3) {
+      mode_s[0] = "RNT"[mode - 1];
+      mode_s[1] = '\0';
+    } else {
+      std::snprintf(mode_s, sizeof(mode_s), "?%02X", mode);
+    }
+    const int w = std::snprintf(out + off, out_cap - off, "%s%02u:%02u-%02u:%02u%s", off != 0 ? " " : "", start >> 3,
+                                (start & 0x07) * 10, end >> 3, (end & 0x07) * 10, mode_s);
+    if (w < 0)
+      break;
+    off += static_cast<std::size_t>(w);
+    if (off >= out_cap) {
+      off = out_cap - 1;
+      break;
+    }
+  }
+  out[off] = '\0';
+  return static_cast<int>(off);
+}
+
+// Strict "HH:MM" on the 10-minute grid, 00:00..24:00. Unlike parse_hhmm_ it
+// rejects an off-grid minute instead of truncating it: a heating program that
+// silently moves by up to nine minutes is the kind of surprise this avoids.
+inline bool parse_wpr_time_(const char **pp, const char *end, uint8_t *b) {
+  const char *p = *pp;
+  if (end - p < 5 || p[0] < '0' || p[0] > '9' || p[1] < '0' || p[1] > '9' || p[2] != ':' || p[3] < '0' || p[3] > '9' ||
+      p[4] < '0' || p[4] > '9')
+    return false;
+  const int h = (p[0] - '0') * 10 + (p[1] - '0');
+  const int m = (p[3] - '0') * 10 + (p[4] - '0');
+  if (m % 10 != 0 || m > 50 || h > 24 || (h == 24 && m != 0))
+    return false;
+  *b = static_cast<uint8_t>(h * 8 + m / 10);
+  *pp = p + 5;
+  return true;
+}
+
+// Inverse of decode_wpr_day. Periods must be in order and must not overlap;
+// 24:00 is valid only as an end. Unused slots are written 00 00 00.
+inline bool encode_wpr_day(const char *str, uint8_t *buf24) {
+  if (str == nullptr || buf24 == nullptr)
+    return false;
+  uint8_t tmp[WPR_DAY_LENGTH] = {0};
+  const char *p = str;
+  const char *end = str + std::strlen(str);
+  std::size_t n = 0;
+  int prev_end = -1;
+  while (p < end) {
+    if (*p == ' ') {
+      p++;
+      continue;
+    }
+    if (n == WPR_DAY_PERIODS)
+      return false;
+    uint8_t start, stop;
+    if (!parse_wpr_time_(&p, end, &start) || p >= end || *p != '-')
+      return false;
+    p++;
+    if (!parse_wpr_time_(&p, end, &stop) || p >= end)
+      return false;
+    uint8_t mode;
+    switch (*p++) {
+      case 'R':
+        mode = 1;
+        break;
+      case 'N':
+        mode = 2;
+        break;
+      case 'T':
+        mode = 3;
+        break;
+      default:
+        return false;
+    }
+    if (p < end && *p != ' ')
+      return false;
+    if (start >= stop || start < prev_end)
+      return false;
+    tmp[3 * n] = start;
+    tmp[3 * n + 1] = stop;
+    tmp[3 * n + 2] = mode;
+    prev_end = stop;
+    n++;
+  }
+  std::memcpy(buf24, tmp, WPR_DAY_LENGTH);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // ASCII byte string (HexByte2AsciiByte) -- device part / serial numbers
 // ---------------------------------------------------------------------------
 

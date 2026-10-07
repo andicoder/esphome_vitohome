@@ -580,6 +580,50 @@ static void test_schaltzeiten_interop() {
   CHECK(std::strcmp(out, "06:10-22:00") == 0);
 }
 
+// --- WPR phase-coded day program (24 bytes = 8 x {start, end, mode}) ------
+static void test_wpr_day() {
+  // HK1 Monday as read from a V200WO1A (0x9200, 24 bytes) on 2026-10-07.
+  const uint8_t monday[24] = {0x00, 0x18, 0x01, 0x18, 0x3B, 0x02, 0x43, 0x5B, 0x02, 0x63, 0x8B, 0x02,
+                              0x93, 0xAB, 0x02, 0xAB, 0xC0, 0x01, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00};
+  char out[128];
+  CHECK(decode_wpr_day(monday, 24, out, sizeof(out)) > 0);
+  CHECK(std::strcmp(out, "00:00-03:00R 03:00-07:30N 08:30-11:30N 12:30-17:30N 18:30-21:30N 21:30-24:00R") == 0);
+
+  // An empty slot is start == end, whatever its mode byte says (slot 7 above
+  // is 00 00 02). An all-empty day decodes to the empty string.
+  const uint8_t empty[24] = {0};
+  CHECK(decode_wpr_day(empty, 24, out, sizeof(out)) == 0 && out[0] == '\0');
+  CHECK(decode_wpr_day(monday, 23, out, sizeof(out)) < 0);  // short read
+
+  // An unknown mode is shown, not hidden or guessed.
+  uint8_t odd[24] = {0x18, 0x3B, 0x05};
+  CHECK(decode_wpr_day(odd, 24, out, sizeof(out)) > 0 && std::strcmp(out, "03:00-07:30?05") == 0);
+
+  // Encode is the inverse; unused slots are 00 00 00.
+  uint8_t buf[24];
+  CHECK(encode_wpr_day("00:00-03:00R 03:00-07:30N 08:30-11:30N 12:30-17:30N 18:30-21:30N 21:30-24:00R", buf));
+  CHECK(std::memcmp(buf, monday, 18) == 0);
+  for (int i = 18; i < 24; i++)
+    CHECK(buf[i] == 0x00);
+  CHECK(encode_wpr_day("", buf));
+  CHECK(std::memcmp(buf, empty, 24) == 0);
+  CHECK(encode_wpr_day("06:00-22:00T", buf) && buf[0] == 0x30 && buf[1] == 0xB0 && buf[2] == 0x03);
+
+  // Rejected rather than guessed: off-grid minutes, end before start, overlap,
+  // out-of-order periods, more than eight, 24:00 as a start, unknown modes.
+  CHECK(!encode_wpr_day("06:05-22:00N", buf));
+  CHECK(!encode_wpr_day("22:00-06:00N", buf));
+  CHECK(!encode_wpr_day("06:00-12:00N 11:00-14:00N", buf));
+  CHECK(!encode_wpr_day("12:00-14:00N 06:00-08:00N", buf));
+  CHECK(!encode_wpr_day("00:00-01:00N 01:00-02:00N 02:00-03:00N 03:00-04:00N 04:00-05:00N 05:00-06:00N "
+                        "06:00-07:00N 07:00-08:00N 08:00-09:00N",
+                        buf));
+  CHECK(!encode_wpr_day("24:00-24:00N", buf));
+  CHECK(!encode_wpr_day("06:00-22:00X", buf));
+  CHECK(!encode_wpr_day("06:00-22:00", buf));
+  CHECK(!encode_wpr_day("06:00-24:10N", buf));
+}
+
 int main() {
   test_read_le();
   test_sign_extend();
@@ -590,6 +634,7 @@ int main() {
   test_int_to_bcd();
   test_timebyte();
   test_schaltzeiten_day();
+  test_wpr_day();
   test_clock_helpers();
   test_datetime();
   test_masked_bit();
