@@ -854,6 +854,11 @@ def _final_validate(config):
                     f"text_sensor '{_entity_name(entity)}' (type wpr_error_history) is read with "
                     f"Remote_Procedure_Calls, which only protocol P300 supports"
                 )
+            if "rpc" in entity:
+                raise cv.Invalid(
+                    f"text_sensor '{_entity_name(entity)}' sets rpc:, a Remote_Procedure_Call, "
+                    f"which only protocol P300 supports"
+                )
 
     if protocol == "GWG":
         # System-time sync cannot work under GWG, at any address.

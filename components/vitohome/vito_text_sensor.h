@@ -41,6 +41,13 @@ class VitoTextSensor final : public text_sensor::TextSensor, public Component, p
   void set_extract_byte(int16_t byte) { this->extract_byte_ = byte; }
   void set_extract_len(uint8_t len) { this->extract_len_ = len; }
   void set_wpr_entries(uint8_t n) { this->wpr_entries_ = n; }
+  void set_rpc(uint8_t p0, uint8_t p1, uint8_t p2, uint8_t p3, uint8_t len) {
+    this->rpc_[0] = p0;
+    this->rpc_[1] = p1;
+    this->rpc_[2] = p2;
+    this->rpc_[3] = p3;
+    this->rpc_len_ = len;
+  }
   uint8_t rpc_param(uint8_t *out4) const override;
 
   void dump_config() override;
@@ -70,6 +77,9 @@ class VitoTextSensor final : public text_sensor::TextSensor, public Component, p
   uint8_t wpr_entries_{30};
   uint8_t wpr_next_{0};
   uint8_t wpr_found_{0};
+  // `raw` with `rpc:`: fixed Remote_Procedure_Call parameters (0 = plain READ).
+  uint8_t rpc_[4]{};
+  uint8_t rpc_len_{0};
   std::string wpr_text_;  // field width to slice at extract_byte_ (enum 1..4, ascii <=32, utf16 <=40)
 };
 

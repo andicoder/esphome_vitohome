@@ -38,6 +38,7 @@ WPR_FAULT_ENTRY_LENGTH = 8
 # A WPR day program (decode.h decode_wpr_day): eight 3-byte periods.
 WPR_DAY_LENGTH = 24
 CONF_ENTRIES = "entries"
+CONF_RPC = "rpc"
 
 VitoTextSensor = vitohome_ns.class_("VitoTextSensor", text_sensor.TextSensor, cg.Component)
 TextSensorType = vitohome_ns.enum("TextSensorType", is_class=True)
@@ -179,6 +180,10 @@ CONFIG_SCHEMA = cv.typed_schema(
         "raw": _addressed(
             {
                 cv.Optional(CONF_LENGTH, default=1): validate_length_in(1, 4),
+                # Fixed Remote_Procedure_Call parameters: sent instead of a READ,
+                # and the whole answer is published as hex. P300 only (checked in
+                # _final_validate).
+                cv.Optional(CONF_RPC): cv.All(cv.ensure_list(cv.hex_uint8_t), cv.Length(min=1, max=4)),
             }
         ),
         "enum": cv.All(
@@ -304,6 +309,10 @@ async def to_code(config):
 
     if config[CONF_TYPE] == "wpr_error_history":
         cg.add(var.set_wpr_entries(config[CONF_ENTRIES]))
+
+    if CONF_RPC in config:
+        params = config[CONF_RPC]
+        cg.add(var.set_rpc(*(params + [0] * (4 - len(params))), len(params)))
 
     emit_poll_interval(var, poll_ms)
 

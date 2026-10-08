@@ -241,10 +241,13 @@ void VitoTextSensor::handle_response(const ResponseView &response) {
 }
 
 uint8_t VitoTextSensor::rpc_param(uint8_t *out4) const {
-  if (this->type_ != TextSensorType::WPR_ERROR_HISTORY)
-    return 0;
-  out4[0] = this->wpr_next_;
-  return 1;
+  if (this->type_ == TextSensorType::WPR_ERROR_HISTORY) {
+    out4[0] = this->wpr_next_;
+    return 1;
+  }
+  for (uint8_t i = 0; i < this->rpc_len_; i++)
+    out4[i] = this->rpc_[i];
+  return this->rpc_len_;
 }
 
 void VitoTextSensor::collect_wpr_fault_(const uint8_t *data, uint8_t len) {
