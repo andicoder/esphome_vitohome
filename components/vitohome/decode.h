@@ -612,12 +612,19 @@ inline bool encode_wpr_day(const char *str, uint8_t *buf24) {
     }
     if (p < end && *p != ' ')
       return false;
-    if (start >= stop || start < prev_end)
+    if (start >= stop)
       return false;
+    // A second-temperature period lies over the R/N periods (the controller
+    // lists hot water's Legionella run after them), so only R/N must be
+    // ordered and disjoint.
+    if (mode != 3) {
+      if (start < prev_end)
+        return false;
+      prev_end = stop;
+    }
     tmp[3 * n] = start;
     tmp[3 * n + 1] = stop;
     tmp[3 * n + 2] = mode;
-    prev_end = stop;
     n++;
   }
   std::memcpy(buf24, tmp, WPR_DAY_LENGTH);

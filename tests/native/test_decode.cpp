@@ -609,6 +609,12 @@ static void test_wpr_day() {
   CHECK(std::memcmp(buf, empty, 24) == 0);
   CHECK(encode_wpr_day("06:00-22:00T", buf) && buf[0] == 0x30 && buf[1] == 0xB0 && buf[2] == 0x03);
 
+  // A second-temperature (T) period lies over the normal periods instead of
+  // between them. Hot water Wednesday on a V200WO1A, 2026-10-07, ends in one
+  // (Legionella run); it must round-trip, or the day cannot be written back.
+  CHECK(encode_wpr_day("00:00-07:30N 08:40-11:30N 12:40-17:30N 18:40-24:00N 02:00-04:30T", buf));
+  CHECK(buf[12] == 0x10 && buf[13] == 0x23 && buf[14] == 0x03);
+
   // Rejected rather than guessed: off-grid minutes, end before start, overlap,
   // out-of-order periods, more than eight, 24:00 as a start, unknown modes.
   CHECK(!encode_wpr_day("06:05-22:00N", buf));
